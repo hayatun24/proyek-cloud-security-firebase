@@ -1,0 +1,231 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Dashboard Keuangan Pribadi</title>
+  <link rel="stylesheet" href="style.css" />
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+</head>
+<body onload="initDashboard()">
+  <header class="header">
+    <h1>💰 Sistem Pencatatan Keuangan Pribadi</h1>
+    <button id="btnLogout" class="logout-btn">Logout</button>
+  </header>
+
+  <main class="container">
+    <section class="welcome-section">
+      <h2 id="welcome">Halo, Pengguna!</h2>
+      <p>Kelola catatan keuanganmu dengan aman di cloud ☁️</p>
+    </section>
+
+    <section class="form-section">
+      <h3>Tambah Transaksi</h3>
+      <div class="form-group">
+        <label for="txType">Jenis Transaksi</label>
+        <select id="txType">
+          <option value="income">Pemasukan</option>
+          <option value="expense">Pengeluaran</option>
+        </select>
+      </div>
+
+      <div class="form-group">
+        <label for="txAmount">Jumlah (Rp)</label>
+        <input type="number" id="txAmount" placeholder="Masukkan jumlah uang..." />
+      </div>
+
+      <div class="form-group">
+        <label for="txNote">Catatan</label>
+        <input type="text" id="txNote" placeholder="Contoh: Makan siang, Gaji bulanan..." />
+      </div>
+
+      <button id="btnAddTx" class="add-btn">+ Simpan Transaksi</button>
+    </section>
+    <!-- tempat tampilan total & grafik (letakkan di dashboard.html) -->
+    <div class="chart-panel">
+      <div class="total-box">Total Saldo: <span id="totalBalance">Rp 0</span></div>
+    <div class="charts">
+      <canvas id="pieChart" height="200"></canvas>
+      <canvas id="lineChart" height="200"></canvas>
+    </div>
+    </div>
+    <section class="list-section">
+      <h3>Daftar Transaksi</h3>
+      <div id="txList" class="table-wrapper">Belum ada data...</div>
+      <p id="debug" class="debug"></p>
+    </section>
+  </main>
+
+  <!-- app.js di-load sebagai module (berisi semua logic auth / firestore) -->
+  <script type="module" src="app.js"></script>
+  <script type="module" src="app.js"></script>
+  <script type="module">
+  import { getAuth, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-auth.js";
+  import {
+    getFirestore,
+    collection,
+    query,
+    orderBy,
+    getDocs
+  } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js";
+
+  // Chart instances (global in this module)
+  let pieChart = null;
+  let lineChart = null;
+
+  const auth = getAuth();     // firebase app already initialized by app.js
+  const db = getFirestore();
+
+  // helper format rupiah
+  function formatRp(n) {
+    try { return "Rp " + Number(n).toLocaleString(); }
+    catch { return "Rp " + n; }
+  }
+
+  // safe: wait for auth status before querying
+  onAuthStateChanged(auth, async (user) => {
+    if (!user) {
+      // not logged in — nothing to show (initDashboard will redirect)
+      return;
+    }
+    // load data and render charts
+    await updateChartsAndTotal(user.uid);
+  });
+
+  // main: load transactions, compute totals, build charts
+  async function updateChartsAndTotal(uid) {
+    try {
+      const q = query(collection(db, 'users', uid, 'transactions'), orderBy('created_at', 'asc'));
+      const snap = await getDocs(q);
+
+      // accumulators
+      let totalIncome = 0;
+      let totalExpense = 0;
+
+      // for timeline: map date -> daily net change
+      const dateMap = {}; // { '2025-11-03': 5000, ... }
+
+      snap.forEach(docSnap => {
+        const d = docSnap.data();
+        const type = d.type || 'expense';
+        const amount = Number(d.amount || 0);
+        // normalize date string
+        let dateStr = '';
+        if (d.created_at && typeof d.created_at.toDate === 'function') {
+          dateStr = d.created_at.toDate().toLocaleDateString('id-ID');
+        } else {
+          dateStr = 'Unknown';
+        }
+
+        if (type === 'income' || type === 'Pemasukan' || type.toLowerCase() === 'pemasukan') {
+          totalIncome += amount;
+          dateMap[dateStr] = (dateMap[dateStr] || 0) + amount;
+        } else {
+          totalExpense += amount;
+          dateMap[dateStr] = (dateMap[dateStr] || 0) - amount;
+        }
+      });
+
+      const totalBalance = totalIncome - totalExpense;
+      // show total
+      const totalEl = document.getElementById('totalBalance');
+      if (totalEl) totalEl.textContent = formatRp(totalBalance);
+
+      // PIE chart data
+      const pieData = {
+        labels: ['Pemasukan', 'Pengeluaran'],
+        datasets: [{
+          data: [totalIncome, totalExpense],
+          backgroundColor: ['#4CAF50', '#FF5B5B']
+        }]
+      };
+
+      // create/destroy pie chart
+      const pieCtx = document.getElementById('pieChart').getContext('2d');
+      if (pieChart) pieChart.destroy();
+      pieChart = new Chart(pieCtx, {
+        type: 'pie',
+        data: pieData,
+        options: {
+          plugins: { legend: { position: 'bottom' } },
+          responsive: true,
+          maintainAspectRatio: false
+        }
+      });
+
+      // LINE chart (timeline)
+      // sort dates chronologically
+      const sortedDates = Object.keys(dateMap).sort((a,b) => {
+        // try to compare using Date objects if possible
+        const da = new Date(a), dbt = new Date(b);
+        if (!isNaN(da) && !isNaN(dbt)) return da - dbt;
+        return a.localeCompare(b);
+      });
+
+      // compute running balance per date
+      const running = [];
+      let runTotal = 0;
+      for (const d of sortedDates) {
+        runTotal += dateMap[d];
+        running.push(runTotal);
+      }
+
+      const lineData = {
+        labels: sortedDates,
+        datasets: [{
+          label: 'Saldo Harian',
+          data: running,
+          borderColor: '#5b6dfd',
+          backgroundColor: 'rgba(91,109,253,0.12)',
+          fill: true,
+          tension: 0.25
+        }]
+      };
+
+      const lineCtx = document.getElementById('lineChart').getContext('2d');
+      if (lineChart) lineChart.destroy();
+      lineChart = new Chart(lineCtx, {
+        type: 'line',
+        data: lineData,
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          scales: {
+            y: { beginAtZero: true }
+          },
+          plugins: { legend: { display: false } }
+        }
+      });
+
+    } catch (err) {
+      console.error('Gagal load chart data', err);
+    }
+  }
+
+  // OPTIONAL: realtime update (listen changes) — uncomment to enable
+  // NOTE: enable only if you want live updates; it will incur Firestore listeners
+  /*
+  import { collection, onSnapshot, query, orderBy } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js";
+  onAuthStateChanged(auth, (user) => {
+    if (!user) return;
+    const qlive = query(collection(db, 'users', user.uid, 'transactions'), orderBy('created_at', 'asc'));
+    onSnapshot(qlive, () => updateChartsAndTotal(user.uid));
+  });
+  */
+</script>
+
+<script>
+  window.onload = () => {
+    if (typeof initDashboard === "function") {
+      initDashboard();
+    } else {
+      console.error("initDashboard is not defined — pastikan app.js sudah dimuat.");
+    }
+  };
+  <p>© 2025 Sistem Keuangan Aman | All Rights Reserved.</p>
+
+</script>
+
+</body>
+</html>

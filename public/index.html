@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Sistem Aman Keuangan Cloud</title>
+  <link rel="stylesheet" href="style.css" />
+  <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+</head>
+<body class="auth-body">
+  <div class="auth-container">
+    <h1 class="app-title">☁️ Sistem Aman Keuangan Pribadi</h1>
+
+    <!-- LOGIN -->
+    <div id="login-form" class="form-card">
+      <h2>Masuk</h2>
+      <div class="form-group">
+        <label>Email</label>
+        <input type="email" id="loginEmail" placeholder="Masukkan email..." />
+      </div>
+      <div class="form-group">
+        <label>Password</label>
+        <input type="password" id="loginPassword" placeholder="Masukkan password..." />
+      </div>
+      <button id="btnLogin" class="login-btn">Login</button>
+      <p class="switch-text">
+        Belum punya akun? <a href="#" id="toRegister">Daftar di sini</a>
+      </p>
+    </div>
+
+    <!-- REGISTER -->
+    <div id="register-form" class="form-card hidden">
+      <h2>Daftar Akun Baru</h2>
+      <div class="form-group">
+        <label>Email</label>
+        <input type="email" id="regEmail" placeholder="Masukkan email..." />
+      </div>
+      <div class="form-group">
+        <label>Password</label>
+        <input type="password" id="regPassword" placeholder="Minimal 6 karakter..." />
+      </div>
+      <button id="btnRegister" class="register-btn">Daftar</button>
+      <p class="switch-text">
+        Sudah punya akun? <a href="#" id="toLogin">Login di sini</a>
+      </p>
+    </div>
+
+    <p id="status" class="status-text">Belum login</p>
+  </div>
+
+  <!-- app.js dipakai sebagai module -->
+  <script type="module" src="app.js"></script>
+
+  <script>
+    // toggle form
+    document.getElementById("toRegister").addEventListener("click", (e) => {
+      e.preventDefault();
+      document.getElementById("login-form").classList.add("hidden");
+      document.getElementById("register-form").classList.remove("hidden");
+    });
+    document.getElementById("toLogin").addEventListener("click", (e) => {
+      e.preventDefault();
+      document.getElementById("register-form").classList.add("hidden");
+      document.getElementById("login-form").classList.remove("hidden");
+    });
+  </script>
+</body>
+</html>
